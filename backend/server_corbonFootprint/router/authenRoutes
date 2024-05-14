@@ -1,0 +1,164 @@
+const express=require ('express');
+const router=express.Router();
+const mongoose=require('mongoose');
+const user=mongoose.model("user");
+const jwt=require('jsonwebtoken');
+const footprint=mongoose.model("footprint");
+
+//
+require('dotenv').config();
+const nodemailer = require("nodemailer");
+//
+const bcrypt=require("bcrypt");
+//nodemailer
+const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false, 
+    auth: {
+      user: "carbonfootprint052@gmail.com",
+      pass: "nawp iutk ebyv arsy",
+    },
+  });
+  async function main(recieveremail,code ) {
+    const info = await transporter.sendMail({
+      from: "carbonfootprint052@gmail.com", 
+      to: `${recieveremail}`, 
+      subject: "Signup Verification", // Subject line
+      text: `Your Verification code ${code}`, // plain text body
+      html: `<br>Your Verification code ${code}</br>`, // html body
+    });
+  
+    console.log("Message sent: %s", info.messageId);
+  }
+  
+  main().catch(console.error);
+//sign up  
+
+router.post('/signup',async(req,res)=>{
+    console.log(`sent by clien`,req.body);
+    const {name,email,password,dob}= req.body;
+    if(!email||!password||!name||!dob){
+        return res.status(422).json({error:"please fill all the feilds"});
+    }
+        const User = new user(
+            {
+                name,
+                email,
+                password,
+                dob
+            }
+        )
+        try{
+            await User.save();
+            //res.send({message: "user saved succesfully"});
+           const token=jwt.sign({_id:user._id},process.env.JWT_SECRET);
+           res.send({message: "User Registerd succesfully",token});
+        }
+        catch(err){
+           console.log(err);
+            
+        }
+        
+    }
+    ) 
+// nodemailer Verify
+
+router.post('/verify',async(req,res)=>{
+    console.log(`sent by clien`,req.body);
+    const {name,email,password,dob}= req.body;
+    if(!email||!password||!name||!dob){
+        return res.status(422).json({error:"please fill all the feilds"});
+    }
+    user.findOne({email:email})
+    .then(async(saveduser)=>{
+        if(saveduser){
+            return res.status(422).json({error:"Invalid credentials"});
+
+        }
+        try{
+            let verificationCode=Math.floor(100000+Math.random()*900000);
+            let client=[
+                {
+                    name,
+                    email,
+                    password,
+                    dob,
+                    verificationCode
+                }
+            ]
+            await main(email,verificationCode);
+            res.send({message:"Verification Code Send to your Email",vdata:client}); 
+        }
+        catch(err){
+           console.log(err);
+            
+        }
+        
+    }
+    )
+})
+//To Display the data 
+router.post ('/signin',async(req,res)=>{
+    const{ email,password}=req.body;
+        if(!email||!password){
+            return res.status(422).json({error:"Plaease add eamil or password"});
+        } 
+        const saveduser=await user.findOne({email:email}) 
+        if(!saveduser){
+            return res.status(422).json({error:"Invalid credentials"});
+        } 
+        try{
+            bcrypt.compare(password,saveduser.password,(err,result)=>{
+                if(result){
+                   console.log("password matched");
+                   const token=jwt.sign({_id:saveduser._id},process.env.JWT_SECRET);
+                   res.send({token}); 
+                }
+                else{
+                    console.log("password does not matched");
+                    return res.status(422).json({error:"Invalid credentials"});
+                }
+            })
+        }
+        catch(err){
+            console.log(err);
+        } 
+})
+// To Calculate Carbon Footrint
+router.post('/calculate', async (req, res) => {
+    const { distanceTraveled, fuelConsumed, electricityConsumed } = req.body;
+  
+    // Validate inputs
+    if (distanceTraveled === 0 || fuelConsumed === 0 || electricityConsumed === 0) {
+      return res.status(422).json({ error: 'Inputs cannot be zero' });
+    }
+  
+    // Calculate carbon footprint
+    const carbonFootprint = distanceTraveled * 0.2 + fuelConsumed * 2.3 + electricityConsumed * 0.5;
+  
+    // Save data to MongoDB
+    const Footprint = new footprint({
+      distanceTraveled,
+      fuelConsumed,
+      electricityConsumed,
+      carbonFootprint
+    });
+    await Footprint.save();
+  
+    res.json({ carbonFootprint });
+  });
+
+
+  router.get('/footprint', async (req, res) => {
+    try {
+      const Footprints = await footprint.find();
+      res.json(Footprints);
+    } catch (error) {
+      console.error(error);
+      res.status(422).json({ error: 'Server Error' });
+    }
+  });
+ 
+  
+module.exports=router;
